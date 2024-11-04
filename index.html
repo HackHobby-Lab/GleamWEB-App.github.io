@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE Device Connector with RGB Control</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 20px auto; text-align: center; }
+        button { padding: 10px 20px; margin: 10px; }
+        #device-list { list-style-type: none; padding: 0; }
+        #device-list li { padding: 10px; border: 1px solid #ccc; margin-top: 5px; cursor: pointer; }
+        .device { font-weight: bold; color: #0056b3; }
+        .color-map { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BLE Device Connector with RGB Control</h1>
+        <button onclick="scanForDevices()">Scan for Devices</button>
+        <ul id="device-list"></ul>
+        <p id="status"></p>
+
+        <div class="color-map">
+            <h2>Color Map</h2>
+            <input type="color" id="colorPicker" value="#ff0000">
+            <button onclick="sendColor()">Send Color</button>
+            <button onclick="sendPredefinedColor(255, 0, 0)">Send Red</button>
+            <button onclick="sendPredefinedColor(0, 255, 0)">Send Green</button>
+            <button onclick="sendPredefinedColor(0, 0, 255)">Send Blue</button>
+        </div>
+    </div>
+
+    <script>
+        const deviceListElem = document.getElementById('device-list');
+        const statusElem = document.getElementById('status');
+
+        const SERVICE_UUID = '00001523-1212-efde-1523-785feabcd123';
+        const CHARACTERISTIC_UUID = '00001524-1212-efde-1523-785feabcd123';
+
+        let selectedDevice, characteristic;
+
+        async function scanForDevices() {
+            statusElem.textContent = 'Scanning for devices...';
+
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [SERVICE_UUID] }]
+                });
+
+                const deviceItem = document.createElement('li');
+                deviceItem.textContent = `Device: ${device.name || 'Unknown'}`;
+                deviceItem.className = 'device';
+                deviceItem.onclick = () => connectToDevice(device);
+                deviceListElem.appendChild(deviceItem);
+
+                statusElem.textContent = 'Device found. Click to connect.';
+            } catch (error) {
+                statusElem.textContent = `Error: ${error.message}`;
+                console.error('Scanning failed:', error);
+            }
+        }
+
+        async function connectToDevice(device) {
+            statusElem.textContent = `Connecting to ${device.name}...`;
+
+            try {
+                selectedDevice = await device.gatt.connect();
+                statusElem.textContent = `Connected to ${device.name}`;
+
+                const service = await selectedDevice.getPrimaryService(SERVICE_UUID);
+                characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                // Handle disconnection
+                device.ongattserverdisconnected = () => {
+                    statusElem.textContent = `${device.name} disconnected.`;
+                    characteristic = null;
+                };
+            } catch (error) {
+                statusElem.textContent = `Connection failed: ${error.message}`;
+                console.error('Connection failed:', error);
+            }
+        }
+
+        function sendColor() {
+            if (!characteristic) {
+                statusElem.textContent = 'Please connect to a device first.';
+                return;
+            }
+
+            const colorPicker = document.getElementById('colorPicker');
+            const hexColor = colorPicker.value;
+            const rgb = hexToRgb(hexColor);
+
+            sendRgbValue(rgb.r, rgb.g, rgb.b);
+        }
+
+        function sendPredefinedColor(r, g, b) {
+            if (!characteristic) {
+                statusElem.textContent = 'Please connect to a device first.';
+                return;
+            }
+
+            sendRgbValue(r, g, b);
+        }
+
+        function sendRgbValue(r, g, b) {
+            const data = new Uint8Array([r, g, b]);
+            characteristic.writeValue(data).then(() => {
+                statusElem.textContent = `Sent RGB (${r}, ${g}, ${b}) to device.`;
+                console.log(`Sent RGB (${r}, ${g}, ${b})`);
+            }).catch(error => {
+                statusElem.textContent = `Failed to send RGB value: ${error.message}`;
+                console.error('Write failed:', error);
+            });
+        }
+
+        function hexToRgb(hex) {
+            const bigint = parseInt(hex.slice(1), 16);
+            const r = (bigint >> 16) & 255;
+            const g = (bigint >> 8) & 255;
+            const b = bigint & 255;
+            return { r, g, b };
+        }
+    </script>
+</body>
+</html>
